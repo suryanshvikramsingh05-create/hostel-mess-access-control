@@ -2,9 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { pool, withTransaction } from "@/lib/db";
 import { requireRole, authErrorResponse, getWardenHostelId, AuthError } from "@/lib/auth";
-import { hashPassword } from "@/lib/password";
-import { generateResidentCode, generateTempPassword, generateToken } from "@/lib/ids";
 import { recordAudit } from "@/lib/audit";
+import { createResidentRecord } from "@/lib/residents";
 
 export async function GET(req: NextRequest) {
   try {
@@ -21,7 +20,8 @@ export async function GET(req: NextRequest) {
 
     const result = hostelId
       ? await pool.query(
-          `SELECT u.id, u.email, u.name, u.is_active, r.resident_code, r.room_number, r.hostel_id, h.name AS hostel_name
+          `SELECT u.id, u.email, u.name, u.is_active, r.resident_code, r.room_number, r.hostel_id, h.name AS hostel_name,
+                  (r.pin_hash IS NOT NULL) AS has_pin
            FROM residents r
            JOIN users u ON u.id = r.user_id
            JOIN hostels h ON h.id = r.hostel_id
@@ -30,7 +30,8 @@ export async function GET(req: NextRequest) {
           [hostelId]
         )
       : await pool.query(
-          `SELECT u.id, u.email, u.name, u.is_active, r.resident_code, r.room_number, r.hostel_id, h.name AS hostel_name
+          `SELECT u.id, u.email, u.name, u.is_active, r.resident_code, r.room_number, r.hostel_id, h.name AS hostel_name,
+                  (r.pin_hash IS NOT NULL) AS has_pin
            FROM residents r
            JOIN users u ON u.id = r.user_id
            JOIN hostels h ON h.id = r.hostel_id
@@ -66,48 +67,29 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const tempPassword = generateTempPassword();
-    const passwordHash = await hashPassword(tempPassword);
-    const residentCode = generateResidentCode(hostelId);
-    const qrToken = generateToken(24);
-
-    const created = await withTransaction(async (client) => {
-      const userResult = await client.query<{ id: number }>(
-        `INSERT INTO users (email, name, role, password_hash, must_change_password)
-         VALUES ($1, $2, 'resident', $3, TRUE)
-         RETURNING id`,
-        [email, name, passwordHash]
-      );
-      const userId = userResult.rows[0].id;
-
-      await client.query(
-        `INSERT INTO residents (user_id, resident_code, hostel_id, room_number, qr_token)
-         VALUES ($1, $2, $3, $4, $5)`,
-        [userId, residentCode, hostelId, roomNumber, qrToken]
-      );
-
-      return userId;
-    });
+    const created = await withTransaction((client) =>
+      createResidentRecord(client, { name, email, roomNumber, hostelId })
+    );
 
     await recordAudit({
       actorUserId: user.id,
       action: "resident_created",
       targetType: "resident",
-      targetId: created,
+      targetId: created.userId,
       details: { email, roomNumber, hostelId },
     });
 
     return NextResponse.json(
       {
         resident: {
-          id: created,
+          id: created.userId,
           name,
           email,
           roomNumber,
           hostelId,
-          residentCode,
+          residentCode: created.residentCode,
         },
-        tempPassword,
+        tempPassword: created.tempPassword,
       },
       { status: 201 }
     );

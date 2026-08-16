@@ -9,12 +9,14 @@ export default function Modal({
   title,
   description,
   children,
+  size = "sm",
 }: {
   open: boolean;
   onClose: () => void;
   title: string;
   description?: string;
   children: ReactNode;
+  size?: "sm" | "lg";
 }) {
   useEffect(() => {
     if (!open) return;
@@ -34,7 +36,11 @@ export default function Modal({
         onClick={onClose}
         aria-hidden
       />
-      <div className="relative w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl animate-fade-in">
+      <div
+        className={`relative max-h-[85vh] w-full overflow-y-auto rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl animate-fade-in ${
+          size === "lg" ? "max-w-3xl" : "max-w-sm"
+        }`}
+      >
         <div className="flex items-start justify-between gap-3">
           <div>
             <h3 className="text-sm font-semibold text-slate-900">{title}</h3>

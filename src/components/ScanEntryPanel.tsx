@@ -1,30 +1,29 @@
 "use client";
 
-import { useEffect, useRef, useState, type FormEvent } from "react";
-import type { Mess } from "@/lib/api-types";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import type { Resident } from "@/lib/api-types";
 import { Card, CardBody, CardHeader } from "@/components/ui/Card";
 import { Field, Input, Select } from "@/components/ui/Field";
 import Button from "@/components/ui/Button";
 import Badge from "@/components/ui/Badge";
+import EmptyState from "@/components/ui/EmptyState";
 import {
   AlertTriangleIcon,
   CheckCircleIcon,
   IdCardIcon,
   KeyRoundIcon,
   QrCodeIcon,
-  ScanLineIcon,
+  SearchIcon,
+  UsersIcon,
+  UtensilsIcon,
   XCircleIcon,
 } from "@/components/ui/icons";
 
-interface ScannedResident {
+interface ScannedMess {
   id: number;
   name: string;
-  isActive: boolean;
-  residentCode: string;
-  roomNumber: string;
   hostelId: number;
   hostelName: string;
-  hasPin: boolean;
 }
 
 const MEAL_TYPES = ["breakfast", "lunch", "snacks", "dinner"] as const;
@@ -37,63 +36,99 @@ const REASON_LABELS: Record<string, string> = {
   unauthorized_hostel: "Resident belongs to a different hostel",
   invalid_mess: "Invalid mess selected",
   pin_not_set: "Resident has not set up a PIN yet",
-  unknown_qr_token: "QR code not recognized",
+  resident_not_found: "Resident not found",
 };
 
-export default function ScanEntryPanel({ messes }: { messes: Mess[] }) {
-  const [qrToken, setQrToken] = useState("");
-  const [resident, setResident] = useState<ScannedResident | null>(null);
+/**
+ * Mess entry flow, in three steps:
+ *  1. Scan the mess's QR code (one QR per mess, shared by every resident
+ *     assigned to it) to identify which mess this counter is for.
+ *  2. Manually identify the resident (search by name / resident ID / room)
+ *     — residents no longer carry a personal QR code.
+ *  3. Verify the resident's PIN and record the entry for the scanned mess.
+ */
+export default function ScanEntryPanel() {
+  const [mess, setMess] = useState<ScannedMess | null>(null);
+  const [messQrToken, setMessQrToken] = useState("");
+  const [messError, setMessError] = useState<string | null>(null);
+  const [messLoading, setMessLoading] = useState(false);
+  const messInputRef = useRef<HTMLInputElement>(null);
+
+  const [residents, setResidents] = useState<Resident[] | null>(null);
+  const [search, setSearch] = useState("");
+  const [resident, setResident] = useState<Resident | null>(null);
+
   const [pin, setPin] = useState("");
   const [mealType, setMealType] = useState<(typeof MEAL_TYPES)[number]>("breakfast");
-  const [messId, setMessId] = useState<string>(messes[0] ? String(messes[0].id) : "");
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<{ approved: boolean; reason?: string } | null>(null);
-  const [scanLoading, setScanLoading] = useState(false);
   const [verifyLoading, setVerifyLoading] = useState(false);
-  const qrInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    qrInputRef.current?.focus();
+    messInputRef.current?.focus();
   }, []);
 
   useEffect(() => {
+    if (!mess) return;
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    if (!messId && messes[0]) setMessId(String(messes[0].id));
-  }, [messes, messId]);
+    setResidents(null);
+    fetch(`/api/residents?hostelId=${mess.hostelId}`)
+      .then((res) => res.json())
+      .then((data) => setResidents(data.residents ?? []))
+      .catch(() => setResidents([]));
+  }, [mess]);
 
-  async function handleScan(e: FormEvent) {
+  async function handleScanMess(e: FormEvent) {
     e.preventDefault();
-    setError(null);
-    setResult(null);
-    if (!qrToken.trim()) return;
-    setScanLoading(true);
+    setMessError(null);
+    if (!messQrToken.trim()) return;
+    setMessLoading(true);
     try {
       const res = await fetch("/api/mess-entries/scan", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ qrToken: qrToken.trim() }),
+        body: JSON.stringify({ qrToken: messQrToken.trim() }),
       });
       const data = await res.json();
       if (!res.ok) {
-        setError(data.error);
-        setResident(null);
+        setMessError(data.error);
         return;
       }
-      setResident(data.resident);
+      setMess(data.mess);
     } finally {
-      setScanLoading(false);
+      setMessLoading(false);
     }
+  }
+
+  function scanDifferentMess() {
+    setMess(null);
+    setMessQrToken("");
+    setMessError(null);
+    setResidents(null);
+    setSearch("");
+    setResident(null);
+    setResult(null);
+    setError(null);
+    setTimeout(() => messInputRef.current?.focus(), 50);
+  }
+
+  function chooseAnotherResident() {
+    setResident(null);
+    setPin("");
+    setResult(null);
+    setError(null);
   }
 
   async function handleVerify(e: FormEvent) {
     e.preventDefault();
+    if (!mess || !resident) return;
     setError(null);
     setVerifyLoading(true);
     try {
       const res = await fetch("/api/mess-entries/verify", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ qrToken: qrToken.trim(), pin, mealType, messId: Number(messId) }),
+        body: JSON.stringify({ residentId: resident.id, pin, mealType, messId: mess.id }),
       });
       const data = await res.json();
       if (!res.ok && !("approved" in data)) {
@@ -103,60 +138,119 @@ export default function ScanEntryPanel({ messes }: { messes: Mess[] }) {
       setResult(data);
       setPin("");
       if (data.approved) {
-        setResident(null);
-        setQrToken("");
-        setTimeout(() => qrInputRef.current?.focus(), 100);
+        setTimeout(() => chooseAnotherResident(), 1200);
       }
     } finally {
       setVerifyLoading(false);
     }
   }
 
-  function resetScan() {
-    setResident(null);
-    setQrToken("");
-    setResult(null);
-    setError(null);
-    setTimeout(() => qrInputRef.current?.focus(), 50);
-  }
+  const filteredResidents = useMemo(() => {
+    if (!residents) return [];
+    const q = search.trim().toLowerCase();
+    if (!q) return residents;
+    return residents.filter(
+      (r) =>
+        r.name.toLowerCase().includes(q) ||
+        r.resident_code.toLowerCase().includes(q) ||
+        r.room_number.toLowerCase().includes(q) ||
+        r.email.toLowerCase().includes(q)
+    );
+  }, [residents, search]);
 
   return (
     <div className="mx-auto max-w-xl space-y-6">
-      {!resident && (
+      {!mess && (
         <Card>
           <CardHeader
-            icon={<ScanLineIcon className="h-4 w-4" />}
-            title="Scan resident"
-            description="Focus the field and scan with a USB/camera QR scanner, or paste the code."
+            icon={<QrCodeIcon className="h-4 w-4" />}
+            title="Scan mess QR"
+            description="Scan the mess's QR code (posted at the counter), or paste it, to begin."
           />
           <CardBody>
-            <form onSubmit={handleScan} className="flex gap-2">
+            <form onSubmit={handleScanMess} className="flex gap-2">
               <div className="relative flex-1">
                 <QrCodeIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                 <Input
-                  ref={qrInputRef}
+                  ref={messInputRef}
                   autoFocus
-                  value={qrToken}
-                  onChange={(e) => setQrToken(e.target.value)}
+                  value={messQrToken}
+                  onChange={(e) => setMessQrToken(e.target.value)}
                   className="pl-9 font-mono"
                   placeholder="Waiting for scan..."
                 />
               </div>
-              <Button type="submit" loading={scanLoading}>
+              <Button type="submit" loading={messLoading}>
                 Look up
               </Button>
             </form>
-            {error && (
+            {messError && (
               <p className="mt-3 flex items-center gap-1.5 text-sm text-red-600">
                 <AlertTriangleIcon className="h-4 w-4" />
-                {error}
+                {messError}
               </p>
             )}
           </CardBody>
         </Card>
       )}
 
-      {resident && (
+      {mess && !resident && (
+        <Card className="animate-fade-in">
+          <CardHeader
+            icon={<UtensilsIcon className="h-4 w-4" />}
+            title={mess.name}
+            description={`${mess.hostelName} — find the resident to check in`}
+            action={
+              <Button variant="ghost" size="sm" onClick={scanDifferentMess}>
+                Scan a different mess
+              </Button>
+            }
+          />
+          <CardBody className="space-y-4">
+            <div className="relative">
+              <SearchIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+              <Input
+                autoFocus
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="pl-9"
+                placeholder="Search by name, resident ID, or room number..."
+              />
+            </div>
+
+            {residents === null ? (
+              <p className="py-6 text-center text-sm text-slate-400">Loading residents...</p>
+            ) : filteredResidents.length === 0 ? (
+              <EmptyState
+                icon={<UsersIcon className="h-6 w-6" />}
+                title="No matching residents"
+                description="Try a different name, resident ID, or room number."
+              />
+            ) : (
+              <div className="max-h-80 divide-y divide-slate-100 overflow-y-auto rounded-xl border border-slate-200">
+                {filteredResidents.map((r) => (
+                  <button
+                    key={r.id}
+                    onClick={() => setResident(r)}
+                    className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left transition-colors hover:bg-slate-50"
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium text-slate-900">{r.name}</p>
+                      <p className="flex items-center gap-1 text-xs text-slate-500">
+                        <IdCardIcon className="h-3.5 w-3.5" />
+                        {r.resident_code} · Room {r.room_number}
+                      </p>
+                    </div>
+                    <Badge tone={r.is_active ? "green" : "slate"}>{r.is_active ? "Active" : "Inactive"}</Badge>
+                  </button>
+                ))}
+              </div>
+            )}
+          </CardBody>
+        </Card>
+      )}
+
+      {mess && resident && (
         <Card className="animate-fade-in">
           <CardBody>
             <div className="flex items-start justify-between gap-3">
@@ -173,55 +267,44 @@ export default function ScanEntryPanel({ messes }: { messes: Mess[] }) {
                   <p className="font-semibold text-slate-900">{resident.name}</p>
                   <p className="flex items-center gap-1 text-xs text-slate-500">
                     <IdCardIcon className="h-3.5 w-3.5" />
-                    {resident.residentCode} · Room {resident.roomNumber} · {resident.hostelName}
+                    {resident.resident_code} · Room {resident.room_number} · {mess.name}
                   </p>
                 </div>
               </div>
-              <Button variant="ghost" size="sm" onClick={resetScan}>
-                Scan another
+              <Button variant="ghost" size="sm" onClick={chooseAnotherResident}>
+                Choose another
               </Button>
             </div>
 
-            {!resident.isActive && (
+            {!resident.is_active && (
               <div className="mt-4 flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-700">
                 <XCircleIcon className="h-4 w-4 shrink-0" />
                 This resident account is deactivated.
               </div>
             )}
-            {resident.isActive && !resident.hasPin && (
+            {resident.is_active && !resident.has_pin && (
               <div className="mt-4 flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-700">
                 <AlertTriangleIcon className="h-4 w-4 shrink-0" />
                 This resident has not set up a security PIN yet and cannot be checked in.
               </div>
             )}
 
-            {resident.isActive && resident.hasPin && (
+            {resident.is_active && resident.has_pin && (
               <form onSubmit={handleVerify} className="mt-5 space-y-4 border-t border-slate-100 pt-5">
-                <div className="grid grid-cols-2 gap-3">
-                  <Field label="Mess" htmlFor="entry-mess">
-                    <Select id="entry-mess" value={messId} onChange={(e) => setMessId(e.target.value)}>
-                      {messes.map((m) => (
-                        <option key={m.id} value={m.id}>
-                          {m.name}
-                        </option>
-                      ))}
-                    </Select>
-                  </Field>
-                  <Field label="Meal" htmlFor="entry-meal">
-                    <Select
-                      id="entry-meal"
-                      value={mealType}
-                      onChange={(e) => setMealType(e.target.value as typeof mealType)}
-                      className="capitalize"
-                    >
-                      {MEAL_TYPES.map((m) => (
-                        <option key={m} value={m} className="capitalize">
-                          {m}
-                        </option>
-                      ))}
-                    </Select>
-                  </Field>
-                </div>
+                <Field label="Meal" htmlFor="entry-meal">
+                  <Select
+                    id="entry-meal"
+                    value={mealType}
+                    onChange={(e) => setMealType(e.target.value as typeof mealType)}
+                    className="capitalize"
+                  >
+                    {MEAL_TYPES.map((m) => (
+                      <option key={m} value={m} className="capitalize">
+                        {m}
+                      </option>
+                    ))}
+                  </Select>
+                </Field>
                 <Field label="Resident PIN" htmlFor="entry-pin">
                   <div className="relative">
                     <KeyRoundIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
@@ -239,7 +322,7 @@ export default function ScanEntryPanel({ messes }: { messes: Mess[] }) {
                     />
                   </div>
                 </Field>
-                <Button type="submit" loading={verifyLoading} disabled={!messId} className="w-full">
+                <Button type="submit" loading={verifyLoading} className="w-full">
                   Verify &amp; record entry
                 </Button>
                 {error && (

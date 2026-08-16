@@ -7,7 +7,7 @@ import { recordAudit } from "@/lib/audit";
 import { clientIp } from "@/lib/http";
 
 const bodySchema = z.object({
-  qrToken: z.string().min(10),
+  residentId: z.number().int().positive(),
   pin: z.string().min(4).max(6),
   mealType: z.enum(["breakfast", "lunch", "snacks", "dinner"]),
   messId: z.number().int().positive(),
@@ -42,13 +42,13 @@ export async function POST(req: NextRequest) {
     if (!parsed.success) {
       return NextResponse.json({ error: "Invalid request" }, { status: 400 });
     }
-    const { qrToken, pin, mealType, messId } = parsed.data;
+    const { residentId, pin, mealType, messId } = parsed.data;
 
     const residentResult = await pool.query<ResidentRow>(
       `SELECT user_id, pin_hash, hostel_id, is_active
        FROM residents r JOIN users u ON u.id = r.user_id
-       WHERE r.qr_token = $1`,
-      [qrToken]
+       WHERE r.user_id = $1`,
+      [residentId]
     );
     const resident = residentResult.rows[0];
 
@@ -56,10 +56,10 @@ export async function POST(req: NextRequest) {
       await recordAudit({
         actorUserId: user.id,
         action: "mess_entry_rejected",
-        details: { reason: "unknown_qr_token" },
+        details: { reason: "resident_not_found" },
         ipAddress: ip,
       });
-      return NextResponse.json({ approved: false, reason: "unknown_qr_token" }, { status: 404 });
+      return NextResponse.json({ approved: false, reason: "resident_not_found" }, { status: 404 });
     }
 
     if (user.role === "warden") {

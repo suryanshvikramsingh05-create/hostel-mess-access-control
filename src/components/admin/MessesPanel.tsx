@@ -10,7 +10,8 @@ import EmptyState from "@/components/ui/EmptyState";
 import { TableContainer, Table, THead, Th, TBody, Tr, Td } from "@/components/ui/Table";
 import { TableSkeleton } from "@/components/ui/Skeleton";
 import { useToast } from "@/components/ui/Toast";
-import { AlertTriangleIcon, PlusIcon, UtensilsIcon } from "@/components/ui/icons";
+import { AlertTriangleIcon, PlusIcon, QrCodeIcon, UtensilsIcon } from "@/components/ui/icons";
+import MessQrModal from "@/components/admin/MessQrModal";
 
 export default function MessesPanel({ hostels }: { hostels: Hostel[] }) {
   const toast = useToast();
@@ -20,6 +21,7 @@ export default function MessesPanel({ hostels }: { hostels: Hostel[] }) {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [togglingId, setTogglingId] = useState<number | null>(null);
+  const [qrMess, setQrMess] = useState<Mess | null>(null);
 
   async function load() {
     const res = await fetch("/api/messes");
@@ -146,14 +148,20 @@ export default function MessesPanel({ hostels }: { hostels: Hostel[] }) {
                     </Badge>
                   </Td>
                   <Td className="text-right">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      loading={togglingId === m.id}
-                      onClick={() => toggleActive(m)}
-                    >
-                      {m.is_active ? "Deactivate" : "Activate"}
-                    </Button>
+                    <div className="flex items-center justify-end gap-1.5">
+                      <Button variant="outline" size="sm" onClick={() => setQrMess(m)}>
+                        <QrCodeIcon className="h-3.5 w-3.5" />
+                        View/Generate QR
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        loading={togglingId === m.id}
+                        onClick={() => toggleActive(m)}
+                      >
+                        {m.is_active ? "Deactivate" : "Activate"}
+                      </Button>
+                    </div>
                   </Td>
                 </Tr>
               ))}
@@ -161,6 +169,8 @@ export default function MessesPanel({ hostels }: { hostels: Hostel[] }) {
           </Table>
         </TableContainer>
       )}
+
+      {qrMess && <MessQrModal messId={qrMess.id} messName={qrMess.name} onClose={() => setQrMess(null)} />}
     </div>
   );
 }

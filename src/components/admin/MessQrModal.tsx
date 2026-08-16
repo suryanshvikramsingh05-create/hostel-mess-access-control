@@ -7,13 +7,17 @@ import Button from "@/components/ui/Button";
 import { useToast } from "@/components/ui/Toast";
 import { AlertTriangleIcon, QrCodeIcon } from "@/components/ui/icons";
 
-export default function ResidentQrModal({
-  residentId,
-  residentName,
+/**
+ * One QR per mess, shared by every resident assigned to it. Lazily
+ * generated server-side on first view if the mess predates this feature.
+ */
+export default function MessQrModal({
+  messId,
+  messName,
   onClose,
 }: {
-  residentId: number;
-  residentName: string;
+  messId: number;
+  messName: string;
   onClose: () => void;
 }) {
   const toast = useToast();
@@ -25,7 +29,7 @@ export default function ResidentQrModal({
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setQrDataUrl(null);
     setError(null);
-    fetch(`/api/residents/${residentId}/qr`)
+    fetch(`/api/messes/${messId}/qr`)
       .then(async (res) => {
         const data = await res.json();
         if (cancelled) return;
@@ -41,13 +45,13 @@ export default function ResidentQrModal({
     return () => {
       cancelled = true;
     };
-  }, [residentId]);
+  }, [messId]);
 
   function handleDownload() {
     if (!qrDataUrl) return;
     const link = document.createElement("a");
     link.href = qrDataUrl;
-    link.download = `${residentName.replace(/\s+/g, "-").toLowerCase()}-mess-qr.png`;
+    link.download = `${messName.replace(/\s+/g, "-").toLowerCase()}-mess-qr.png`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -58,8 +62,8 @@ export default function ResidentQrModal({
     <Modal
       open
       onClose={onClose}
-      title={`${residentName}'s mess entry QR`}
-      description="Scan this at the mess counter, or download and print it."
+      title={`${messName} QR code`}
+      description="Print and display this at the mess counter. Every resident assigned to this mess shares the same QR code."
     >
       <div className="flex flex-col items-center">
         {error && (
@@ -72,7 +76,7 @@ export default function ResidentQrModal({
         {qrDataUrl && (
           <div className="rounded-xl border border-slate-200 bg-indigo-50/40 p-3">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={qrDataUrl} alt={`${residentName} QR code`} className="h-52 w-52" />
+            <img src={qrDataUrl} alt={`${messName} QR code`} className="h-52 w-52" />
           </div>
         )}
 

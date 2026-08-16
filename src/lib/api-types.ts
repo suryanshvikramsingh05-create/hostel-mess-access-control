@@ -23,6 +23,7 @@ export interface Resident {
   room_number: string;
   hostel_id: number;
   hostel_name?: string;
+  has_pin?: boolean;
 }
 
 export interface Invite {

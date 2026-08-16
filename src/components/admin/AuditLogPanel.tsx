@@ -16,6 +16,7 @@ const ACTION_TONE: Record<string, "green" | "red" | "amber" | "indigo" | "slate"
   mess_entry_approved: "green",
   mess_entry_rejected: "red",
   password_changed: "indigo",
+  residents_bulk_imported: "indigo",
 };
 
 function toneFor(action: string) {

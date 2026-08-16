@@ -1,4 +1,4 @@
-import QrCard from "@/components/resident/QrCard";
+import MessStatusCard from "@/components/resident/MessStatusCard";
 import PinSetupCard from "@/components/resident/PinSetupCard";
 import EntryHistoryPanel from "@/components/EntryHistoryPanel";
 import { HistoryIcon } from "@/components/ui/icons";
@@ -13,11 +13,11 @@ export default async function ResidentPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-lg font-semibold tracking-tight text-slate-900">Welcome, {user.name.split(" ")[0]}</h1>
-        <p className="text-sm text-slate-500">Your mess pass, PIN, and entry history.</p>
+        <p className="text-sm text-slate-500">Your mess entry status, PIN, and history.</p>
       </div>
 
       {profile && (
-        <QrCard
+        <MessStatusCard
           residentName={user.name}
           roomNumber={profile.room_number}
           hostelName={profile.hostel_name}

@@ -3,6 +3,7 @@ import { z } from "zod";
 import { pool } from "@/lib/db";
 import { requireRole, authErrorResponse, getWardenHostelId } from "@/lib/auth";
 import { recordAudit } from "@/lib/audit";
+import { generateToken } from "@/lib/ids";
 
 export async function GET(req: NextRequest) {
   try {
@@ -46,9 +47,9 @@ export async function POST(req: NextRequest) {
     const { hostelId, name } = parsed.data;
 
     const result = await pool.query(
-      `INSERT INTO messes (hostel_id, name) VALUES ($1, $2)
+      `INSERT INTO messes (hostel_id, name, qr_token) VALUES ($1, $2, $3)
        RETURNING id, hostel_id, name, is_active, created_at`,
-      [hostelId, name]
+      [hostelId, name, generateToken(24)]
     );
     const mess = result.rows[0];
 

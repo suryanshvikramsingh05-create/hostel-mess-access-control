@@ -10,12 +10,10 @@ import EntryHistoryPanel from "@/components/EntryHistoryPanel";
 import ScanEntryPanel from "@/components/ScanEntryPanel";
 import EmptyState from "@/components/ui/EmptyState";
 import { LoaderIcon, AlertTriangleIcon, BarChartIcon, HistoryIcon, LayoutDashboardIcon, MailPlusIcon, ScanLineIcon, UsersIcon } from "@/components/ui/icons";
-import type { Mess } from "@/lib/api-types";
 
 export default function WardenPage() {
   const [hostelId, setHostelId] = useState<number | null>(null);
   const [userName, setUserName] = useState("");
-  const [messes, setMesses] = useState<Mess[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -24,10 +22,6 @@ export default function WardenPage() {
       const me = await meRes.json();
       setHostelId(me.user?.hostelId ?? null);
       setUserName(me.user?.name ?? "");
-
-      const messesRes = await fetch("/api/messes");
-      const messesData = await messesRes.json();
-      setMesses(messesData.messes ?? []);
       setLoading(false);
     })();
   }, []);
@@ -67,7 +61,7 @@ export default function WardenPage() {
           key: "scan",
           label: "Mess entry",
           icon: <ScanLineIcon className="h-[18px] w-[18px]" />,
-          content: <ScanEntryPanel messes={messes} />,
+          content: <ScanEntryPanel />,
         },
         {
           key: "residents",

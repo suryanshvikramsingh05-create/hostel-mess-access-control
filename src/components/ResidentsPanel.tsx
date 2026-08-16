@@ -10,8 +10,22 @@ import EmptyState from "@/components/ui/EmptyState";
 import { TableContainer, Table, THead, Th, TBody, Tr, Td } from "@/components/ui/Table";
 import { TableSkeleton } from "@/components/ui/Skeleton";
 import { useToast } from "@/components/ui/Toast";
-import { AlertTriangleIcon, CheckCircleIcon, PlusIcon, QrCodeIcon, UsersIcon } from "@/components/ui/icons";
-import ResidentQrModal from "@/components/ResidentQrModal";
+import { AlertTriangleIcon, CheckCircleIcon, DownloadIcon, PlusIcon, UsersIcon } from "@/components/ui/icons";
+import BulkImportResidentsModal from "@/components/admin/BulkImportResidentsModal";
+
+const CSV_TEMPLATE = "hostel,name,email,room_number\n1,Rahul Sharma,rahul@example.com,B-204\n1,Priya Verma,priya@example.com,A-1\n";
+
+function downloadCsvTemplate() {
+  const blob = new Blob([CSV_TEMPLATE], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "resident-import-template.csv";
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
 
 export default function ResidentsPanel({
   hostels,
@@ -30,7 +44,6 @@ export default function ResidentsPanel({
   const [loading, setLoading] = useState(false);
   const [togglingId, setTogglingId] = useState<number | null>(null);
   const [credentials, setCredentials] = useState<{ email: string; tempPassword: string } | null>(null);
-  const [qrResident, setQrResident] = useState<Resident | null>(null);
 
   async function load() {
     const res = await fetch("/api/residents");
@@ -106,6 +119,17 @@ export default function ResidentsPanel({
           icon={<UsersIcon className="h-4 w-4" />}
           title="Add a resident"
           description="Creates a login with a one-time temporary password."
+          action={
+            !fixedHostelId ? (
+              <div className="flex flex-wrap items-center gap-2">
+                <Button variant="ghost" size="sm" onClick={downloadCsvTemplate}>
+                  <DownloadIcon className="h-4 w-4" />
+                  Download CSV template
+                </Button>
+                <BulkImportResidentsModal onImported={load} />
+              </div>
+            ) : undefined
+          }
         />
         <CardBody>
           <form onSubmit={handleCreate} className="flex flex-wrap items-end gap-3">
@@ -206,34 +230,20 @@ export default function ResidentsPanel({
                     </Badge>
                   </Td>
                   <Td className="text-right">
-                    <div className="flex items-center justify-end gap-1.5">
-                      <Button variant="outline" size="sm" onClick={() => setQrResident(r)}>
-                        <QrCodeIcon className="h-3.5 w-3.5" />
-                        View QR
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        loading={togglingId === r.id}
-                        onClick={() => toggleActive(r)}
-                      >
-                        {r.is_active ? "Deactivate" : "Activate"}
-                      </Button>
-                    </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      loading={togglingId === r.id}
+                      onClick={() => toggleActive(r)}
+                    >
+                      {r.is_active ? "Deactivate" : "Activate"}
+                    </Button>
                   </Td>
                 </Tr>
               ))}
             </TBody>
           </Table>
         </TableContainer>
-      )}
-
-      {qrResident && (
-        <ResidentQrModal
-          residentId={qrResident.id}
-          residentName={qrResident.name}
-          onClose={() => setQrResident(null)}
-        />
       )}
     </div>
   );
