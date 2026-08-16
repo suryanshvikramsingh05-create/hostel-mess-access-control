@@ -47,7 +47,7 @@ const REASON_LABELS: Record<string, string> = {
  *     — residents no longer carry a personal QR code.
  *  3. Verify the resident's PIN and record the entry for the scanned mess.
  */
-export default function ScanEntryPanel() {
+export default function ScanEntryPanel({ initialMessQrToken }: { initialMessQrToken?: string }) {
   const [mess, setMess] = useState<ScannedMess | null>(null);
   const [messQrToken, setMessQrToken] = useState("");
   const [messError, setMessError] = useState<string | null>(null);
@@ -78,16 +78,15 @@ export default function ScanEntryPanel() {
       .catch(() => setResidents([]));
   }, [mess]);
 
-  async function handleScanMess(e: FormEvent) {
-    e.preventDefault();
+  async function scanMess(token: string) {
     setMessError(null);
-    if (!messQrToken.trim()) return;
+    if (!token.trim()) return;
     setMessLoading(true);
     try {
       const res = await fetch("/api/mess-entries/scan", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ qrToken: messQrToken.trim() }),
+        body: JSON.stringify({ qrToken: token.trim() }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -98,6 +97,23 @@ export default function ScanEntryPanel() {
     } finally {
       setMessLoading(false);
     }
+  }
+
+  // Arrived here via a phone-camera scan of a mess QR (/scan?mess=<token>
+  // -> this component receives the token as a prop): identify the mess
+  // automatically instead of requiring the token to be typed/pasted again.
+  // The token is never trusted client-side — scanMess() always re-validates
+  // it against the database via /api/mess-entries/scan.
+  useEffect(() => {
+    if (!initialMessQrToken) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setMessQrToken(initialMessQrToken);
+    void scanMess(initialMessQrToken);
+  }, [initialMessQrToken]);
+
+  async function handleScanMess(e: FormEvent) {
+    e.preventDefault();
+    await scanMess(messQrToken);
   }
 
   function scanDifferentMess() {

@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import QRCode from "qrcode";
 import { pool } from "@/lib/db";
 import { requireRole, authErrorResponse } from "@/lib/auth";
@@ -10,8 +10,14 @@ import { recordAudit } from "@/lib/audit";
  * assigned to that mess shares it. Lazily generates the token on first
  * view if the mess predates this feature (or was created before a token
  * existed), otherwise just renders the existing one.
+ *
+ * The QR encodes a scannable HTTPS URL (/scan?mess=<token>) on whatever
+ * origin the admin is currently browsing from — not the raw token — so a
+ * normal phone camera has something to open. The token itself carries no
+ * trust: /scan and /api/mess-entries/scan always re-validate it against
+ * the database server-side.
  */
-export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const user = await requireRole("admin");
     const { id } = await params;
@@ -50,7 +56,9 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       });
     }
 
-    const dataUrl = await QRCode.toDataURL(qrToken, {
+    const scanUrl = `${req.nextUrl.origin}/scan?mess=${encodeURIComponent(qrToken)}`;
+
+    const dataUrl = await QRCode.toDataURL(scanUrl, {
       errorCorrectionLevel: "M",
       margin: 2,
       width: 320,
@@ -58,6 +66,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 
     return NextResponse.json({
       qrDataUrl: dataUrl,
+      scanUrl,
       mess: { id: mess.id, name: mess.name, hostelId: mess.hostel_id, hostelName: mess.hostel_name },
     });
   } catch (err) {

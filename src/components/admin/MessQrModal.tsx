@@ -22,12 +22,14 @@ export default function MessQrModal({
 }) {
   const toast = useToast();
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
+  const [scanUrl, setScanUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setQrDataUrl(null);
+    setScanUrl(null);
     setError(null);
     fetch(`/api/messes/${messId}/qr`)
       .then(async (res) => {
@@ -38,6 +40,7 @@ export default function MessQrModal({
           return;
         }
         setQrDataUrl(data.qrDataUrl);
+        setScanUrl(data.scanUrl ?? null);
       })
       .catch(() => {
         if (!cancelled) setError("Could not load QR code");
@@ -78,6 +81,11 @@ export default function MessQrModal({
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={qrDataUrl} alt={`${messName} QR code`} className="h-52 w-52" />
           </div>
+        )}
+        {scanUrl && (
+          <p className="mt-3 max-w-xs break-all text-center text-xs text-slate-400">
+            Scanning opens: <span className="font-mono text-slate-500">{scanUrl}</span>
+          </p>
         )}
 
         <Button className="mt-4 w-full" onClick={handleDownload} disabled={!qrDataUrl}>
