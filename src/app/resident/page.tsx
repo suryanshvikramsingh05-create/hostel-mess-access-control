@@ -26,7 +26,7 @@ export default async function ResidentPage() {
       )}
 
       <div className="mx-auto w-full max-w-md">
-        <PinSetupCard />
+        <PinSetupCard hasPin={profile?.has_pin ?? false} />
       </div>
 
       <div>

@@ -21,10 +21,18 @@ export async function POST(req: NextRequest) {
     }
 
     const pinHash = await hashPin(parsed.data.pin);
-    await pool.query(
+    const result = await pool.query(
       `UPDATE residents SET pin_hash = $1, updated_at = now() WHERE user_id = $2`,
       [pinHash, user.id]
     );
+
+    // requireRole("resident") guarantees a resident session, but every
+    // resident row must exist 1:1 with its user row (created together at
+    // registration) — if the UPDATE ever somehow matched zero rows, do not
+    // report success for a PIN that was never actually persisted.
+    if (result.rowCount === 0) {
+      return NextResponse.json({ error: "Resident profile not found" }, { status: 404 });
+    }
 
     await recordAudit({
       actorUserId: user.id,

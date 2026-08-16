@@ -52,8 +52,10 @@ export async function getResidentProfile(userId: number) {
     hostel_name: string;
     room_number: string;
     qr_token: string;
+    has_pin: boolean;
   }>(
-    `SELECT r.user_id, r.resident_code, r.hostel_id, h.name AS hostel_name, r.room_number, r.qr_token
+    `SELECT r.user_id, r.resident_code, r.hostel_id, h.name AS hostel_name, r.room_number, r.qr_token,
+            (r.pin_hash IS NOT NULL) AS has_pin
      FROM residents r JOIN hostels h ON h.id = r.hostel_id
      WHERE r.user_id = $1`,
     [userId]
