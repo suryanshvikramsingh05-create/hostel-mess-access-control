@@ -5,9 +5,10 @@ import { requireRole, authErrorResponse, getWardenHostelId } from "@/lib/auth";
 import { verifyPin } from "@/lib/password";
 import { recordAudit } from "@/lib/audit";
 import { clientIp } from "@/lib/http";
+import { getMealAvailability } from "@/lib/mealWindows";
 
 const bodySchema = z.object({
-  residentId: z.number().int().positive(),
+  residentId: z.number().int().positive().optional(),
   pin: z.string().min(4).max(6),
   mealType: z.enum(["breakfast", "lunch", "snacks", "dinner"]),
   messId: z.number().int().positive(),
@@ -36,13 +37,23 @@ async function insertRejectedEntry(
 
 export async function POST(req: NextRequest) {
   try {
-    const user = await requireRole("admin", "warden");
+    const user = await requireRole("admin", "warden", "resident");
     const ip = clientIp(req);
     const parsed = bodySchema.safeParse(await req.json().catch(() => null));
     if (!parsed.success) {
       return NextResponse.json({ error: "Invalid request" }, { status: 400 });
     }
-    const { residentId, pin, mealType, messId } = parsed.data;
+    const { pin, mealType, messId } = parsed.data;
+
+    // A resident can only ever verify themselves — their identity comes
+    // from the authenticated session, never from client-supplied JSON, so
+    // there is no way to pass someone else's residentId and impersonate
+    // them. Only admin/warden (the manual staff-override panel) may name
+    // an arbitrary residentId.
+    const residentId = user.role === "resident" ? user.id : parsed.data.residentId;
+    if (!residentId) {
+      return NextResponse.json({ error: "Invalid request" }, { status: 400 });
+    }
 
     const residentResult = await pool.query<ResidentRow>(
       `SELECT user_id, pin_hash, hostel_id, is_active
@@ -101,6 +112,25 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ approved: false, reason: "inactive_resident" }, { status: 403 });
     }
 
+    // Server is the sole source of truth for meal timing — the client's
+    // clock/label is never trusted. "expired" and "upcoming" are reported
+    // as distinct reasons (rather than one generic "closed") so the UI can
+    // show the resident an accurate MEAL EXPIRED vs. not-yet-open message.
+    const availability = getMealAvailability(mealType);
+    if (availability !== "open") {
+      const reason = availability === "expired" ? "meal_expired" : "meal_upcoming";
+      await insertRejectedEntry(resident.user_id, messId, mealType, reason, user.id);
+      await recordAudit({
+        actorUserId: user.id,
+        action: "mess_entry_rejected",
+        targetType: "resident",
+        targetId: resident.user_id,
+        details: { mealType, messId, reason },
+        ipAddress: ip,
+      });
+      return NextResponse.json({ approved: false, reason }, { status: 403 });
+    }
+
     if (!resident.pin_hash) {
       return NextResponse.json({ approved: false, reason: "pin_not_set" }, { status: 400 });
     }
@@ -143,13 +173,19 @@ export async function POST(req: NextRequest) {
           return { approved: false as const, reason: "daily_limit_reached" };
         }
 
-        await client.query(
+        const entryResult = await client.query<{ id: number; entry_time: string }>(
           `INSERT INTO mess_entries (resident_id, mess_id, meal_type, status, verified_by)
-           VALUES ($1, $2, $3, 'approved', $4)`,
+           VALUES ($1, $2, $3, 'approved', $4)
+           RETURNING id, entry_time`,
           [resident.user_id, messId, mealType, user.id]
         );
 
-        return { approved: true as const, entryNumberToday: counterResult.rows[0].approved_count };
+        return {
+          approved: true as const,
+          entryNumberToday: counterResult.rows[0].approved_count,
+          entryId: entryResult.rows[0].id,
+          enteredAt: entryResult.rows[0].entry_time,
+        };
       });
 
       await recordAudit({
@@ -175,7 +211,18 @@ export async function POST(req: NextRequest) {
           details: { mealType, messId, reason: "duplicate_meal" },
           ipAddress: ip,
         });
-        return NextResponse.json({ approved: false, reason: "duplicate_meal" }, { status: 200 });
+        // Look up when the existing approved entry was recorded so the UI
+        // can show "Used at: <time>" instead of a bare rejection.
+        const existing = await pool.query<{ entry_time: string }>(
+          `SELECT entry_time FROM mess_entries
+           WHERE resident_id = $1 AND meal_type = $2 AND status = 'approved' AND entry_date = CURRENT_DATE
+           ORDER BY entry_time DESC LIMIT 1`,
+          [resident.user_id, mealType]
+        );
+        return NextResponse.json(
+          { approved: false, reason: "duplicate_meal", usedAt: existing.rows[0]?.entry_time ?? null },
+          { status: 200 }
+        );
       }
       throw err;
     }

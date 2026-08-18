@@ -8,7 +8,13 @@ import Badge from "@/components/ui/Badge";
 import { useToast } from "@/components/ui/Toast";
 import { AlertTriangleIcon, KeyRoundIcon } from "@/components/ui/icons";
 
-export default function PinSetupCard({ hasPin: initialHasPin }: { hasPin: boolean }) {
+export default function PinSetupCard({
+  hasPin: initialHasPin,
+  onSaved,
+}: {
+  hasPin: boolean;
+  onSaved?: () => void;
+}) {
   const toast = useToast();
   const [hasPin, setHasPin] = useState(initialHasPin);
   const [editing, setEditing] = useState(!initialHasPin);
@@ -45,6 +51,7 @@ export default function PinSetupCard({ hasPin: initialHasPin }: { hasPin: boolea
       setConfirmPin("");
       setHasPin(true);
       setEditing(false);
+      onSaved?.();
     } finally {
       setLoading(false);
     }

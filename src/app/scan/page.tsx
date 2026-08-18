@@ -4,12 +4,15 @@ import TopBar from "@/components/ui/TopBar";
 import ScanEntryPanel from "@/components/ScanEntryPanel";
 
 /**
- * Deep-link target for a mess QR code scanned with a normal phone camera
- * (QR payload is `${origin}/scan?mess=<token>`). Requires an authenticated
- * admin/warden session to continue — the token itself is never trusted
- * here; ScanEntryPanel re-validates it server-side via
- * /api/mess-entries/scan before showing anything mess-specific. No
- * resident data is exposed on this page before that server-side check.
+ * Staff-only manual mess-entry override (admin/warden), for the case where
+ * a resident doesn't have their phone on hand. Requires an authenticated
+ * admin/warden session — the mess QR token itself is never trusted here;
+ * ScanEntryPanel re-validates it server-side via /api/mess-entries/scan
+ * before showing anything mess-specific.
+ *
+ * Residents land here if they follow a stale link to /scan (the resident
+ * self-service check-in used to live at this URL) — they're forwarded to
+ * the dedicated /mess/check-in page instead of the resident dashboard.
  */
 export default async function ScanPage({
   searchParams,
@@ -17,11 +20,15 @@ export default async function ScanPage({
   searchParams: Promise<{ mess?: string }>;
 }) {
   const { mess } = await searchParams;
-  const next = `/scan${mess ? `?mess=${encodeURIComponent(mess)}` : ""}`;
+  const query = mess ? `?mess=${encodeURIComponent(mess)}` : "";
+  const next = `/scan${query}`;
 
   const user = await getCurrentUser();
   if (!user) redirect(`/login?next=${encodeURIComponent(next)}`);
-  if (user.role === "resident") redirect("/resident");
+
+  if (user.role === "resident") {
+    redirect(`/mess/check-in${query}`);
+  }
 
   return (
     <div className="flex min-h-full flex-1 flex-col bg-slate-50">

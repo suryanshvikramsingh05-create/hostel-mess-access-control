@@ -11,10 +11,13 @@ import { recordAudit } from "@/lib/audit";
  * view if the mess predates this feature (or was created before a token
  * existed), otherwise just renders the existing one.
  *
- * The QR encodes a scannable HTTPS URL (/scan?mess=<token>) on whatever
- * origin the admin is currently browsing from — not the raw token — so a
- * normal phone camera has something to open. The token itself carries no
- * trust: /scan and /api/mess-entries/scan always re-validate it against
+ * The QR encodes a scannable HTTPS URL (/mess/check-in?mess=<token>) on
+ * whatever origin the admin is currently browsing from — not the raw
+ * token — so a normal phone camera has something to open. That route is
+ * the dedicated resident check-in page (never the resident dashboard);
+ * admin/warden who scan the same QR are forwarded from there to the
+ * staff override panel at /scan. The token itself carries no trust:
+ * /mess/check-in and /api/mess-entries/scan always re-validate it against
  * the database server-side.
  */
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -56,7 +59,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       });
     }
 
-    const scanUrl = `${req.nextUrl.origin}/scan?mess=${encodeURIComponent(qrToken)}`;
+    const scanUrl = `${req.nextUrl.origin}/mess/check-in?mess=${encodeURIComponent(qrToken)}`;
 
     const dataUrl = await QRCode.toDataURL(scanUrl, {
       errorCorrectionLevel: "M",

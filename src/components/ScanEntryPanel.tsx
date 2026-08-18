@@ -18,6 +18,7 @@ import {
   UtensilsIcon,
   XCircleIcon,
 } from "@/components/ui/icons";
+import { MEAL_WINDOWS, isMealWindowOpen, mealWindowLabel, type MealType } from "@/lib/mealWindows";
 
 interface ScannedMess {
   id: number;
@@ -26,7 +27,7 @@ interface ScannedMess {
   hostelName: string;
 }
 
-const MEAL_TYPES = ["breakfast", "lunch", "snacks", "dinner"] as const;
+const MEAL_TYPES = ["breakfast", "lunch", "snacks", "dinner"] as const satisfies readonly MealType[];
 
 const REASON_LABELS: Record<string, string> = {
   daily_limit_reached: "Daily limit of 4 entries reached",
@@ -37,14 +38,21 @@ const REASON_LABELS: Record<string, string> = {
   invalid_mess: "Invalid mess selected",
   pin_not_set: "Resident has not set up a PIN yet",
   resident_not_found: "Resident not found",
+  meal_expired: "This meal's serving window has already ended",
+  meal_upcoming: "This meal is not being served yet",
 };
 
 /**
- * Mess entry flow, in three steps:
+ * Manual staff-override panel for admin/warden. The normal entry flow is
+ * self-service (see StudentScanPanel): the resident scans the mess QR on
+ * their own phone, authenticates, and enters their own PIN. This panel
+ * exists for cases where a resident doesn't have their phone — staff
+ * scan/paste the mess QR, search for the resident, and enter the PIN on
+ * their behalf, in three steps:
  *  1. Scan the mess's QR code (one QR per mess, shared by every resident
  *     assigned to it) to identify which mess this counter is for.
  *  2. Manually identify the resident (search by name / resident ID / room)
- *     — residents no longer carry a personal QR code.
+ *     — residents don't carry a personal QR code.
  *  3. Verify the resident's PIN and record the entry for the scanned mess.
  */
 export default function ScanEntryPanel({ initialMessQrToken }: { initialMessQrToken?: string }) {
@@ -314,12 +322,22 @@ export default function ScanEntryPanel({ initialMessQrToken }: { initialMessQrTo
                     onChange={(e) => setMealType(e.target.value as typeof mealType)}
                     className="capitalize"
                   >
-                    {MEAL_TYPES.map((m) => (
-                      <option key={m} value={m} className="capitalize">
-                        {m}
-                      </option>
-                    ))}
+                    {MEAL_TYPES.map((m) => {
+                      const open = isMealWindowOpen(m);
+                      return (
+                        <option key={m} value={m} disabled={!open} className="capitalize">
+                          {m} — {MEAL_WINDOWS[m].label}
+                          {open ? "" : " (closed)"}
+                        </option>
+                      );
+                    })}
                   </Select>
+                  {!isMealWindowOpen(mealType) && (
+                    <p className="mt-1.5 flex items-center gap-1.5 text-xs text-amber-600">
+                      <AlertTriangleIcon className="h-3.5 w-3.5" />
+                      Only served {mealWindowLabel(mealType)} (IST).
+                    </p>
+                  )}
                 </Field>
                 <Field label="Resident PIN" htmlFor="entry-pin">
                   <div className="relative">
@@ -370,7 +388,11 @@ export default function ScanEntryPanel({ initialMessQrToken }: { initialMessQrTo
             ) : (
               <>
                 <p className="font-medium">Entry rejected</p>
-                <p className="text-xs opacity-80">{REASON_LABELS[result.reason ?? ""] ?? result.reason}</p>
+                <p className="text-xs opacity-80">
+                  {result.reason === "meal_expired" || result.reason === "meal_upcoming"
+                    ? `Only served ${mealWindowLabel(mealType)} (IST).`
+                    : (REASON_LABELS[result.reason ?? ""] ?? result.reason)}
+                </p>
               </>
             )}
           </div>

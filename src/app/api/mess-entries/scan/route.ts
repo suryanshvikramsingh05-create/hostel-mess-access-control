@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { pool } from "@/lib/db";
-import { requireRole, authErrorResponse, getWardenHostelId } from "@/lib/auth";
+import { requireRole, authErrorResponse, getWardenHostelId, getResidentProfile } from "@/lib/auth";
 
 const bodySchema = z.object({
   qrToken: z.string().min(10),
@@ -9,14 +9,17 @@ const bodySchema = z.object({
 
 /**
  * Looks up a MESS by its scanned QR token (one QR per mess, shared by all
- * its residents). Read-only — does not record an entry. The warden/admin
- * uses this to confirm which mess they're at, then separately identifies
- * the resident (by search) and collects their PIN via
- * /api/mess-entries/verify.
+ * its residents). Read-only — does not record an entry.
+ *
+ * Two callers:
+ *  - A resident who scanned the mess QR with their own phone, to confirm
+ *    which mess they're at before entering their PIN via
+ *    /api/mess-entries/verify.
+ *  - Admin/warden staff, for the manual override panel.
  */
 export async function POST(req: NextRequest) {
   try {
-    const user = await requireRole("admin", "warden");
+    const user = await requireRole("admin", "warden", "resident");
     const parsed = bodySchema.safeParse(await req.json().catch(() => null));
     if (!parsed.success) {
       return NextResponse.json({ error: "Invalid QR code" }, { status: 400 });
@@ -50,6 +53,16 @@ export async function POST(req: NextRequest) {
       if (wardenHostelId !== mess.hostel_id) {
         return NextResponse.json(
           { error: "This mess belongs to a different hostel" },
+          { status: 403 }
+        );
+      }
+    }
+
+    if (user.role === "resident") {
+      const profile = await getResidentProfile(user.id);
+      if (!profile || profile.hostel_id !== mess.hostel_id) {
+        return NextResponse.json(
+          { error: "You are not assigned to this mess" },
           { status: 403 }
         );
       }

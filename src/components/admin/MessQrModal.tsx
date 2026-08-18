@@ -66,9 +66,12 @@ export default function MessQrModal({
       open
       onClose={onClose}
       title={`${messName} QR code`}
-      description="Print and display this at the mess counter. Every resident assigned to this mess shares the same QR code."
+      description="ONE QR CODE FOR THIS MESS"
     >
       <div className="flex flex-col items-center">
+        <p className="mb-4 max-w-xs text-center text-sm text-slate-500">
+          Display this QR at the mess entrance. Residents assigned to this mess use the same QR.
+        </p>
         {error && (
           <p className="flex items-center gap-1.5 text-sm text-red-600">
             <AlertTriangleIcon className="h-4 w-4" />
