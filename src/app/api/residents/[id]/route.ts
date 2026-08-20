@@ -65,3 +65,43 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     return authErrorResponse(err);
   }
 }
+
+export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  try {
+    const user = await requireRole("admin", "warden");
+    const { id } = await params;
+    const residentUserId = Number(id);
+    await assertResidentScopedAccess(user.role as "admin" | "warden", user.id, residentUserId);
+
+    const existing = await pool.query<{ id: number; name: string; email: string }>(
+      `SELECT u.id, u.name, u.email FROM residents r JOIN users u ON u.id = r.user_id WHERE u.id = $1`,
+      [residentUserId]
+    );
+    if (!existing.rows[0]) {
+      return NextResponse.json({ error: "Resident not found" }, { status: 404 });
+    }
+
+    const result = await pool.query(`DELETE FROM users WHERE id = $1`, [residentUserId]);
+    if (result.rowCount === 0) {
+      return NextResponse.json({ error: "Resident not found" }, { status: 404 });
+    }
+
+    await recordAudit({
+      actorUserId: user.id,
+      action: "resident_deleted",
+      targetType: "resident",
+      targetId: residentUserId,
+      details: { name: existing.rows[0].name, email: existing.rows[0].email },
+    });
+
+    return NextResponse.json({ success: true });
+  } catch (err: unknown) {
+    if (err && typeof err === "object" && "code" in err && err.code === "23503") {
+      return NextResponse.json(
+        { error: "This resident has related records (e.g. mess entries) and cannot be deleted" },
+        { status: 409 }
+      );
+    }
+    return authErrorResponse(err);
+  }
+}

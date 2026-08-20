@@ -7,6 +7,7 @@ import { Field, Input, Select } from "@/components/ui/Field";
 import Button from "@/components/ui/Button";
 import Badge, { statusTone } from "@/components/ui/Badge";
 import EmptyState from "@/components/ui/EmptyState";
+import Modal from "@/components/ui/Modal";
 import { TableContainer, Table, THead, Th, TBody, Tr, Td } from "@/components/ui/Table";
 import { TableSkeleton } from "@/components/ui/Skeleton";
 import { useToast } from "@/components/ui/Toast";
@@ -44,6 +45,8 @@ export default function ResidentsPanel({
   const [loading, setLoading] = useState(false);
   const [togglingId, setTogglingId] = useState<number | null>(null);
   const [credentials, setCredentials] = useState<{ email: string; tempPassword: string } | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Resident | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   async function load() {
     const res = await fetch("/api/residents");
@@ -105,6 +108,24 @@ export default function ResidentsPanel({
       await load();
     } finally {
       setTogglingId(null);
+    }
+  }
+
+  async function handleDelete() {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    try {
+      const res = await fetch(`/api/residents/${deleteTarget.id}`, { method: "DELETE" });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data.error ?? "Could not delete resident");
+        return;
+      }
+      toast.success(`${deleteTarget.name} deleted`);
+      setDeleteTarget(null);
+      await load();
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -230,14 +251,19 @@ export default function ResidentsPanel({
                     </Badge>
                   </Td>
                   <Td className="text-right">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      loading={togglingId === r.id}
-                      onClick={() => toggleActive(r)}
-                    >
-                      {r.is_active ? "Deactivate" : "Activate"}
-                    </Button>
+                    <div className="flex justify-end gap-2">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        loading={togglingId === r.id}
+                        onClick={() => toggleActive(r)}
+                      >
+                        {r.is_active ? "Deactivate" : "Activate"}
+                      </Button>
+                      <Button variant="danger" size="sm" onClick={() => setDeleteTarget(r)}>
+                        Delete
+                      </Button>
+                    </div>
                   </Td>
                 </Tr>
               ))}
@@ -245,6 +271,25 @@ export default function ResidentsPanel({
           </Table>
         </TableContainer>
       )}
+
+      <Modal
+        open={deleteTarget !== null}
+        onClose={() => (deleting ? undefined : setDeleteTarget(null))}
+        title="Delete resident permanently?"
+      >
+        <p className="text-sm text-slate-600">
+          Delete <span className="font-medium text-slate-900">{deleteTarget?.name}</span> permanently? This action
+          cannot be undone.
+        </p>
+        <div className="mt-5 flex justify-end gap-2">
+          <Button variant="outline" size="sm" disabled={deleting} onClick={() => setDeleteTarget(null)}>
+            Cancel
+          </Button>
+          <Button variant="danger" size="sm" loading={deleting} onClick={handleDelete}>
+            Delete permanently
+          </Button>
+        </div>
+      </Modal>
     </div>
   );
 }
