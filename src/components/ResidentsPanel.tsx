@@ -86,7 +86,11 @@ export default function ResidentsPanel({
         return;
       }
       setCredentials({ email, tempPassword: data.tempPassword });
-      toast.success(`Resident "${data.resident.name}" created`);
+      if (data.emailSent) {
+        toast.success(`Resident "${data.resident.name}" created and emailed their login details`);
+      } else {
+        toast.error(`Resident "${data.resident.name}" created, but the email could not be sent: ${data.emailError ?? "unknown error"}`);
+      }
       setName("");
       setEmail("");
       setRoomNumber("");

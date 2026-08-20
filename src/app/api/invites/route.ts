@@ -5,6 +5,7 @@ import { pool } from "@/lib/db";
 import { requireRole, authErrorResponse, getWardenHostelId, AuthError } from "@/lib/auth";
 import { generateToken } from "@/lib/ids";
 import { recordAudit } from "@/lib/audit";
+import { sendMail, inviteEmail } from "@/lib/mail";
 
 const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -83,8 +84,23 @@ export async function POST(req: NextRequest) {
       details: { email, role, hostelId },
     });
 
+    const hostelResult = await pool.query<{ name: string }>(`SELECT name FROM hostels WHERE id = $1`, [hostelId]);
+    const hostelName = hostelResult.rows[0]?.name ?? "your hostel";
+    const inviteLink = `${req.nextUrl.origin}/invite/${rawToken}`;
+
+    let emailSent = false;
+    let emailError: string | null = null;
+    try {
+      const { subject, html, text } = inviteEmail({ role, hostelName, roomNumber, inviteLink, expiresAt });
+      await sendMail({ to: email, subject, html, text });
+      emailSent = true;
+    } catch (err) {
+      emailError = err instanceof Error ? err.message : "Unknown error sending email";
+      console.error("[invites] failed to send invite email:", emailError);
+    }
+
     return NextResponse.json(
-      { invite: result.rows[0], token: rawToken },
+      { invite: result.rows[0], token: rawToken, emailSent, emailError },
       { status: 201 }
     );
   } catch (err) {

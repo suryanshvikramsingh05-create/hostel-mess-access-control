@@ -71,7 +71,11 @@ export default function InvitesPanel({
         return;
       }
       setLink(`${window.location.origin}/invite/${data.token}`);
-      toast.success(`Invite sent to ${email}`);
+      if (data.emailSent) {
+        toast.success(`Invite emailed to ${email}`);
+      } else {
+        toast.error(`Invite created, but the email could not be sent: ${data.emailError ?? "unknown error"}`);
+      }
       setEmail("");
       setRoomNumber("");
       await load();

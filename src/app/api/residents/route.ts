@@ -4,6 +4,7 @@ import { pool, withTransaction } from "@/lib/db";
 import { requireRole, authErrorResponse, getWardenHostelId, AuthError } from "@/lib/auth";
 import { recordAudit } from "@/lib/audit";
 import { createResidentRecord } from "@/lib/residents";
+import { sendMail, residentWelcomeEmail } from "@/lib/mail";
 
 export async function GET(req: NextRequest) {
   try {
@@ -79,6 +80,28 @@ export async function POST(req: NextRequest) {
       details: { email, roomNumber, hostelId },
     });
 
+    const hostelResult = await pool.query<{ name: string }>(`SELECT name FROM hostels WHERE id = $1`, [hostelId]);
+    const hostelName = hostelResult.rows[0]?.name ?? "your hostel";
+    const loginUrl = `${req.nextUrl.origin}/login`;
+
+    let emailSent = false;
+    let emailError: string | null = null;
+    try {
+      const { subject, html, text } = residentWelcomeEmail({
+        name,
+        hostelName,
+        roomNumber,
+        email,
+        tempPassword: created.tempPassword,
+        loginUrl,
+      });
+      await sendMail({ to: email, subject, html, text });
+      emailSent = true;
+    } catch (err) {
+      emailError = err instanceof Error ? err.message : "Unknown error sending email";
+      console.error("[residents] failed to send welcome email:", emailError);
+    }
+
     return NextResponse.json(
       {
         resident: {
@@ -90,6 +113,8 @@ export async function POST(req: NextRequest) {
           residentCode: created.residentCode,
         },
         tempPassword: created.tempPassword,
+        emailSent,
+        emailError,
       },
       { status: 201 }
     );
