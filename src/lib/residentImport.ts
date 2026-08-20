@@ -68,7 +68,8 @@ export interface ValidatedResidentRow {
 export function validateResidentRows(
   rows: RawResidentRow[],
   validHostelIds: Set<number>,
-  existingEmailsLower: Set<string>
+  existingEmailsLower: Set<string>,
+  hostelNameToId: Map<string, number> = new Map()
 ): ValidatedResidentRow[] {
   const emailCounts = new Map<string, number>();
   for (const r of rows) {
@@ -78,7 +79,9 @@ export function validateResidentRows(
 
   return rows.map((r, i) => {
     const errors: string[] = [];
-    const hostelId = /^\d+$/.test(r.hostel) ? Number(r.hostel) : null;
+    const hostelId = /^\d+$/.test(r.hostel)
+      ? Number(r.hostel)
+      : hostelNameToId.get(r.hostel.toLowerCase()) ?? null;
 
     if (!r.hostel) {
       errors.push("Hostel is required");

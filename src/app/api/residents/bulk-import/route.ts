@@ -41,6 +41,7 @@ export async function POST(req: NextRequest) {
     const hostelsResult = await pool.query<{ id: number; name: string }>(`SELECT id, name FROM hostels`);
     const validHostelIds = new Set(hostelsResult.rows.map((h) => h.id));
     const hostelNamesById = new Map(hostelsResult.rows.map((h) => [h.id, h.name]));
+    const hostelNameToId = new Map(hostelsResult.rows.map((h) => [h.name.toLowerCase(), h.id]));
 
     const candidateEmails = Array.from(
       new Set(parsedCsv.rows.map((r) => r.email.trim().toLowerCase()).filter(Boolean))
@@ -54,7 +55,7 @@ export async function POST(req: NextRequest) {
       for (const row of existingResult.rows) existingEmailsLower.add(row.email);
     }
 
-    const validatedRows = validateResidentRows(parsedCsv.rows, validHostelIds, existingEmailsLower);
+    const validatedRows = validateResidentRows(parsedCsv.rows, validHostelIds, existingEmailsLower, hostelNameToId);
     const summary = {
       total: validatedRows.length,
       valid: validatedRows.filter((r) => r.category === "valid").length,
