@@ -5,6 +5,7 @@ import { requireRole, authErrorResponse } from "@/lib/auth";
 import { recordAudit } from "@/lib/audit";
 import { createResidentRecord } from "@/lib/residents";
 import { parseResidentCsvRows, validateResidentRows } from "@/lib/residentImport";
+import { sendMail, residentWelcomeEmail } from "@/lib/mail";
 
 const MAX_ROWS = 2000;
 
@@ -37,8 +38,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: `Too many rows (max ${MAX_ROWS})` }, { status: 400 });
     }
 
-    const hostelsResult = await pool.query<{ id: number }>(`SELECT id FROM hostels`);
+    const hostelsResult = await pool.query<{ id: number; name: string }>(`SELECT id, name FROM hostels`);
     const validHostelIds = new Set(hostelsResult.rows.map((h) => h.id));
+    const hostelNamesById = new Map(hostelsResult.rows.map((h) => [h.id, h.name]));
 
     const candidateEmails = Array.from(
       new Set(parsedCsv.rows.map((r) => r.email.trim().toLowerCase()).filter(Boolean))
@@ -64,6 +66,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ preview: true, rows: validatedRows, summary });
     }
 
+    const loginUrl = `${req.nextUrl.origin}/login`;
     const imported: {
       name: string;
       email: string;
@@ -71,6 +74,8 @@ export async function POST(req: NextRequest) {
       hostelId: number;
       residentCode: string;
       tempPassword: string;
+      emailSent: boolean;
+      emailError: string | null;
     }[] = [];
     const failed: { rowNumber: number; email: string; error: string }[] = [];
 
@@ -85,6 +90,25 @@ export async function POST(req: NextRequest) {
             hostelId: row.hostelId as number,
           })
         );
+
+        let emailSent = false;
+        let emailError: string | null = null;
+        try {
+          const { subject, html, text } = residentWelcomeEmail({
+            name: row.name,
+            hostelName: hostelNamesById.get(row.hostelId) ?? "your hostel",
+            roomNumber: row.roomNumber,
+            email: row.email,
+            tempPassword: created.tempPassword,
+            loginUrl,
+          });
+          await sendMail({ to: row.email, subject, html, text });
+          emailSent = true;
+        } catch (mailErr) {
+          emailError = mailErr instanceof Error ? mailErr.message : "Unknown error sending email";
+          console.error(`[residents/bulk-import] failed to send welcome email to ${row.email}:`, emailError);
+        }
+
         imported.push({
           name: row.name,
           email: row.email,
@@ -92,6 +116,8 @@ export async function POST(req: NextRequest) {
           hostelId: row.hostelId,
           residentCode: created.residentCode,
           tempPassword: created.tempPassword,
+          emailSent,
+          emailError,
         });
       } catch (err: unknown) {
         const isUniqueViolation = err && typeof err === "object" && "code" in err && err.code === "23505";
