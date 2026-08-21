@@ -9,6 +9,18 @@ import { sendMail, residentWelcomeEmail } from "@/lib/mail";
 
 const MAX_ROWS = 2000;
 
+// Gmail SMTP is not built for firing hundreds of messages back-to-back in one
+// uninterrupted loop — pacing sends avoids provider throttling/spam flags on
+// large imports (400-500 residents). Batch size and delays are deliberately
+// modest so a typical import doesn't take unnecessarily long.
+const EMAIL_BATCH_SIZE = 25;
+const EMAIL_SEND_DELAY_MS = 300;
+const EMAIL_BATCH_PAUSE_MS = 3000;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 const bodySchema = z.object({
   csvText: z.string().min(1),
   confirm: z.boolean().optional().default(false),
@@ -80,8 +92,10 @@ export async function POST(req: NextRequest) {
     }[] = [];
     const failed: { rowNumber: number; email: string; error: string }[] = [];
 
-    for (const row of validatedRows) {
-      if (row.category !== "valid" || row.hostelId === null) continue;
+    const rowsToProcess = validatedRows.filter((row) => row.category === "valid" && row.hostelId !== null);
+    let emailAttempts = 0;
+
+    for (const row of rowsToProcess) {
       try {
         const created = await withTransaction((client) =>
           createResidentRecord(client, {
@@ -97,7 +111,7 @@ export async function POST(req: NextRequest) {
         try {
           const { subject, html, text } = residentWelcomeEmail({
             name: row.name,
-            hostelName: hostelNamesById.get(row.hostelId) ?? "your hostel",
+            hostelName: hostelNamesById.get(row.hostelId as number) ?? "your hostel",
             roomNumber: row.roomNumber,
             email: row.email,
             tempPassword: created.tempPassword,
@@ -110,11 +124,18 @@ export async function POST(req: NextRequest) {
           console.error(`[residents/bulk-import] failed to send welcome email to ${row.email}:`, emailError);
         }
 
+        emailAttempts++;
+        const isLastEmailAttempt = emailAttempts >= rowsToProcess.length;
+        if (!isLastEmailAttempt) {
+          const isEndOfBatch = emailAttempts % EMAIL_BATCH_SIZE === 0;
+          await sleep(isEndOfBatch ? EMAIL_BATCH_PAUSE_MS : EMAIL_SEND_DELAY_MS);
+        }
+
         imported.push({
           name: row.name,
           email: row.email,
           roomNumber: row.roomNumber,
-          hostelId: row.hostelId,
+          hostelId: row.hostelId as number,
           residentCode: created.residentCode,
           tempPassword: created.tempPassword,
           emailSent,
