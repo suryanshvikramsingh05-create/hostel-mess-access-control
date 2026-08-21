@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import type { Hostel, Resident } from "@/lib/api-types";
 import { Card, CardBody, CardHeader } from "@/components/ui/Card";
 import { Field, Input, Select } from "@/components/ui/Field";
@@ -11,7 +11,7 @@ import Modal from "@/components/ui/Modal";
 import { TableContainer, Table, THead, Th, TBody, Tr, Td } from "@/components/ui/Table";
 import { TableSkeleton } from "@/components/ui/Skeleton";
 import { useToast } from "@/components/ui/Toast";
-import { AlertTriangleIcon, CheckCircleIcon, DownloadIcon, PlusIcon, UsersIcon } from "@/components/ui/icons";
+import { AlertTriangleIcon, CheckCircleIcon, DownloadIcon, PlusIcon, SearchIcon, UsersIcon } from "@/components/ui/icons";
 import BulkImportResidentsModal from "@/components/admin/BulkImportResidentsModal";
 
 const CSV_TEMPLATE = "hostel,name,email,room_number\n1,Rahul Sharma,rahul@example.com,B-204\n1,Priya Verma,priya@example.com,A-1\n";
@@ -47,6 +47,20 @@ export default function ResidentsPanel({
   const [credentials, setCredentials] = useState<{ email: string; tempPassword: string } | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Resident | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [search, setSearch] = useState("");
+
+  const filteredResidents = useMemo(() => {
+    if (!residents) return residents;
+    const q = search.trim().toLowerCase();
+    if (!q) return residents;
+    return residents.filter(
+      (r) =>
+        r.name.toLowerCase().includes(q) ||
+        r.resident_code.toLowerCase().includes(q) ||
+        r.room_number.toLowerCase().includes(q) ||
+        r.email.toLowerCase().includes(q)
+    );
+  }, [residents, search]);
 
   async function load() {
     const res = await fetch("/api/residents");
@@ -221,6 +235,21 @@ export default function ResidentsPanel({
         </div>
       )}
 
+      {residents !== null && residents.length > 0 && (
+        <Field label="Search residents" htmlFor="resident-search">
+          <div className="relative">
+            <SearchIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <Input
+              id="resident-search"
+              placeholder="Search by name, resident ID, room, or email"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="pl-9"
+            />
+          </div>
+        </Field>
+      )}
+
       {residents === null ? (
         <TableSkeleton rows={4} cols={fixedHostelId ? 5 : 6} />
       ) : residents.length === 0 ? (
@@ -228,6 +257,12 @@ export default function ResidentsPanel({
           icon={<UsersIcon className="h-6 w-6" />}
           title="No residents yet"
           description="Add your first resident using the form above, or send an invite link."
+        />
+      ) : filteredResidents !== null && filteredResidents.length === 0 ? (
+        <EmptyState
+          icon={<SearchIcon className="h-6 w-6" />}
+          title="No matching residents"
+          description="Try a different name, resident ID, room number, or email."
         />
       ) : (
         <TableContainer>
@@ -242,7 +277,7 @@ export default function ResidentsPanel({
               <Th className="text-right">Actions</Th>
             </THead>
             <TBody>
-              {residents.map((r) => (
+              {(filteredResidents ?? []).map((r) => (
                 <Tr key={r.id}>
                   <Td className="font-medium text-slate-900">{r.name}</Td>
                   <Td className="font-mono text-xs text-slate-500">{r.resident_code}</Td>
